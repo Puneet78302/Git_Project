@@ -4,9 +4,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Website</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+    </style>
 </head>
 <body>
     <h1>Hello World</h1>
     <p>This is a minimal website.</p>
+    
+    <div class="image-container">
+        <img src="https://picsum.photos/600/400?random=1" alt="A beautiful random image" />
+        <p><em>A sample image from Picsum Photos</em></p>
+    </div>
+    
+    <p>Images make websites more visually appealing and engaging for visitors.</p>
 </body>
 </html>
