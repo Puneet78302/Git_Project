@@ -1,232 +1,48 @@
-name: Deploy Website
+name: Simple Deploy to GitHub Pages
 
-# Trigger the workflow on push to main branch or pull requests
+# Trigger on push to main branch
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
 
-# Define environment variables
-env:
-  NODE_VERSION: '18'
+# Set permissions for GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  # Job for testing and linting
-  test:
-    runs-on: ubuntu-latest
-    name: Test and Lint
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: |
-        npm init -y
-        npm install --save-dev htmlhint stylelint eslint prettier
-        
-    - name: Lint HTML
-      run: |
-        npx htmlhint "*.html" --config .htmlhintrc || echo "HTML linting completed"
-        
-    - name: Lint CSS
-      run: |
-        npx stylelint "*.css" --config-basedir . || echo "CSS linting completed"
-        
-    - name: Lint JavaScript
-      run: |
-        npx eslint "*.js" --env browser --env es6 || echo "JS linting completed"
-        
-    - name: Check file structure
-      run: |
-        echo "Checking required files..."
-        test -f index.html && echo "✓ index.html found" || echo "✗ index.html missing"
-        test -f styles.css && echo "✓ styles.css found" || echo "✗ styles.css missing"  
-        test -f script.js && echo "✓ script.js found" || echo "✗ script.js missing"
-
-  # Job for building and deploying
+  # Single job to build and deploy
   deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    name: Build and Deploy
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
         
-    - name: Install build tools
-      run: |
-        npm init -y
-        npm install --save-dev clean-css-cli terser html-minifier-terser
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v4
         
-    - name: Create build directory
-      run: mkdir -p dist
-      
-    - name: Minify CSS
-      run: |
-        npx clean-css-cli -o dist/styles.min.css styles.css
-        echo "✓ CSS minified"
-        
-    - name: Minify JavaScript
-      run: |
-        npx terser script.js -o dist/script.min.js --compress --mangle
-        echo "✓ JavaScript minified"
-        
-    - name: Process HTML
-      run: |
-        # Update HTML to use minified files
-        sed 's/styles\.css/styles.min.css/g; s/script\.js/script.min.js/g' index.html > dist/index.html
-        echo "✓ HTML processed"
-        
-    - name: Generate build info
-      run: |
-        echo "Build completed at: $(date)" > dist/build-info.txt
-        echo "Commit: ${{ github.sha }}" >> dist/build-info.txt
-        echo "Branch: ${{ github.ref_name }}" >> dist/build-info.txt
-        
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: website-build
-        path: dist/
-        retention-days: 30
-        
-    # Deploy to GitHub Pages
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      if: github.ref == 'refs/heads/main'
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./dist
-        
-  # Job for security scanning
-  security:
-    runs-on: ubuntu-latest
-    name: Security Scan
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-  # Job for lighthouse performance testing
-  lighthouse:
-    runs-on: ubuntu-latest
-    name: Lighthouse CI
-    needs: deploy
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        
-    - name: Install Lighthouse CI
-      run: npm install -g @lhci/cli@0.12.x
-      
-    - name: Run Lighthouse CI
-      run: |
-        lhci autorun --upload.target=temporary-public-storage || echo "Lighthouse scan completed"
-      env:
-        LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Job for creating release
-  release:
-    runs-on: ubuntu-latest
-    name: Create Release
-    needs: [test, deploy, security]
-    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Generate release tag
-      id: tag
-      run: |
-        TAG="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
-        echo "tag=$TAG" >> $GITHUB_OUTPUT
-        
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: website-build
-        path: release/
-        
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.tag.outputs.tag }}
-        name: Website Release ${{ steps.tag.outputs.tag }}
-        body: |
-          🚀 **Automated Website Release**
+      - name: Upload artifact to Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload entire repository
+          path: '.'
           
-          **Changes in this release:**
-          - ${{ github.event.head_commit.message }}
-          
-          **Build Information:**
-          - Commit: ${{ github.sha }}
-          - Build Date: ${{ github.event.head_commit.timestamp }}
-          
-          **Files included:**
-          - Minified CSS and JavaScript
-          - Optimized HTML
-          - Build artifacts
-          
-        files: |
-          release/*
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Job for notifications
-  notify:
-    runs-on: ubuntu-latest
-    name: Notifications
-    needs: [test, deploy]
-    if: always()
-    
-    steps:
-    - name: Notify on success
-      if: needs.deploy.result == 'success'
-      run: |
-        echo "🎉 Website deployed successfully!"
-        echo "🔗 Your website is available at: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
         
-    - name: Notify on failure
-      if: needs.test.result == 'failure' || needs.deploy.result == 'failure'
-      run: |
-        echo "❌ Build or deployment failed!"
-        echo "Please check the logs for more information."
+      - name: Output deployment URL
+        run: |
+          echo "🎉 Website deployed successfully!"
+          echo "🔗 Your site is live at: ${{ steps.deployme
